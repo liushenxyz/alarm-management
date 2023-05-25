@@ -1,0 +1,124 @@
+basePath: /api/v1
+definitions:
+  main.CreatAlertParamBody:
+    properties:
+      delay:
+        example: 3m
+        type: string
+      hostname:
+        example: Zabbix server
+        type: string
+      threshold:
+        example: '>=10'
+        type: string
+    required:
+    - delay
+    - hostname
+    - threshold
+    type: object
+info:
+  contact: {}
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Log Alarm Management Service
+  version: "1.0"
+paths:
+  /alert/creat:
+    post:
+      consumes:
+      - application/json
+      description: 创建告警规则
+      parameters:
+      - description: 名称
+        in: query
+        name: name
+        required: true
+        type: string
+      - description: 索引
+        in: query
+        name: index
+        required: true
+        type: string
+      - description: 查询字符串
+        in: query
+        name: query_string
+        required: true
+        type: string
+      - description: 默认配置
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.CreatAlertParamBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      security:
+      - BasicAuth: []
+      summary: Creat Alert
+      tags:
+      - alert
+  /alert/delete:
+    delete:
+      consumes:
+      - application/json
+      description: 删除告警规则
+      parameters:
+      - description: 名称
+        in: query
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+      security:
+      - BasicAuth: []
+      summary: Delete Alert
+      tags:
+      - alert
+  /alert/get:
+    get:
+      consumes:
+      - application/json
+      description: 查看所有告警规则
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      security:
+      - BasicAuth: []
+      summary: Get Alerts
+      tags:
+      - alert
+  /monitor/health_check:
+    get:
+      consumes:
+      - application/json
+      description: Health Check
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Health Check
+      tags:
+      - monitor
+securityDefinitions:
+  BasicAuth:
+    type: basic
+swagger: "2.0"

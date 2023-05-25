@@ -1,0 +1,14 @@
+version: '3.0'
+
+services:
+  alert-management:
+    container_name: alert-management
+    image: alert-management
+    restart: always
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
