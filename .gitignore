@@ -23,3 +23,10 @@ go.work
 # GoLand IDE
 .idea/
 *.iml
+
+# macOS
+.DS_Store
+
+
+# local configuration
+**/configs/config.yaml
