@@ -105,6 +105,13 @@ const docTemplate = `{
                         "name": "name",
                         "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "索引",
+                        "name": "index",
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -117,14 +124,14 @@ const docTemplate = `{
                 }
             }
         },
-        "/alert/get": {
+        "/alert/query": {
             "get": {
                 "security": [
                     {
                         "BasicAuth": []
                     }
                 ],
-                "description": "查看所有告警规则",
+                "description": "查询单个索引相关告警",
                 "consumes": [
                     "application/json"
                 ],
@@ -134,7 +141,16 @@ const docTemplate = `{
                 "tags": [
                     "alert"
                 ],
-                "summary": "Get Alerts",
+                "summary": "Query Alerts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "索引",
+                        "name": "index",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -147,7 +163,7 @@ const docTemplate = `{
         },
         "/monitor/health_check": {
             "get": {
-                "description": "Health Check",
+                "description": "健康检查",
                 "consumes": [
                     "application/json"
                 ],
@@ -174,7 +190,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "delay",
-                "hostname",
+                "description",
                 "threshold"
             ],
             "properties": {
@@ -182,9 +198,9 @@ const docTemplate = `{
                     "type": "string",
                     "example": "3m"
                 },
-                "hostname": {
+                "description": {
                     "type": "string",
-                    "example": "Zabbix server"
+                    "example": "description"
                 },
                 "threshold": {
                     "type": "string",

@@ -13,6 +13,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -72,17 +73,19 @@ type Alert struct {
 	Name          string `json:"name"`
 	Key           string `json:"key"`
 	HostID        string `json:"host_id"`
+	HostName      string `json:"host_name"`
 	Elasticsearch string `json:"elasticsearch"`
 	Index         string `json:"index"`
 	QueryString   string `json:"query_string"`
 	Delay         string `json:"delay"`
 	Threshold     string `json:"threshold"`
+	Description   string `json:"description"`
 }
 
 type CreatAlertParamBody struct {
-	HostName  string `json:"hostname" binding:"required" example:"Zabbix server"`
-	Delay     string `json:"delay" binding:"required" example:"3m"`
-	Threshold string `json:"threshold" binding:"required" example:">=10"`
+	Description string `json:"description" binding:"required" example:"description"`
+	Delay       string `json:"delay" binding:"required" example:"3m"`
+	Threshold   string `json:"threshold" binding:"required" example:">=10"`
 }
 
 type CreatAlertParamQuery struct {
@@ -134,15 +137,18 @@ func CreatAlert(c *gin.Context) {
 	name := query.Name
 	hash := md5.Sum([]byte(name))
 	key := hex.EncodeToString(hash[:])
-	hostName := body.HostName
 	delay := body.Delay
 	threshold := body.Threshold
+	description := body.Description
 	index := query.Index
 	queryString := query.QueryString
 	posts := connector.GeneratePosts(queryString, delay)
 	url := fmt.Sprintf("%s/%s/_search", elasticsearch, index)
 
 	zabbix := connector.NewZabbix(config.Zabbix.Url, config.Zabbix.Token)
+
+	// 已索引名称命名主机
+	hostName := strings.ReplaceAll(index, "*", "")
 	host, err := zabbix.GetHostByName(hostName)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
@@ -152,7 +158,24 @@ func CreatAlert(c *gin.Context) {
 		})
 		return
 	}
-	itemID, err := zabbix.CreateItem(name, key, host.HostID, delay, username, password, url, posts)
+
+	hostID := ""
+	if host.HostID == "" {
+		createdHostID, err := zabbix.CreateHost(hostName, "22")
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"status": "failure",
+				"error":  err.Error(),
+				"data":   map[string]interface{}{},
+			})
+			return
+		}
+		hostID = createdHostID
+	} else {
+		hostID = host.HostID
+	}
+
+	itemID, err := zabbix.CreateItem(name, key, hostID, delay, username, password, url, posts, description)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"status": "failure",
@@ -161,6 +184,7 @@ func CreatAlert(c *gin.Context) {
 		})
 		return
 	}
+
 	TriggerID, err := zabbix.CreateTrigger(hostName, name, key, threshold)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -182,7 +206,8 @@ func CreatAlert(c *gin.Context) {
 }
 
 type DeleteAlertParamQuery struct {
-	Name string `form:"name" binding:"required"`
+	Name  string `form:"name" binding:"required"`
+	Index string `form:"index" binding:"required"`
 }
 
 // DeleteAlert
@@ -193,6 +218,7 @@ type DeleteAlertParamQuery struct {
 // @Accept json
 // @Produce json
 // @Param name query string true "名称"
+// @Param index query string true "索引"
 // @Success 204 {string} Success
 // @Security BasicAuth
 // @Router /alert/delete [delete]
@@ -207,11 +233,32 @@ func DeleteAlert(c *gin.Context) {
 		return
 	}
 
-	itemName := query.Name
 	config := c.MustGet("config").(configs.Config)
 	zabbix := connector.NewZabbix(config.Zabbix.Url, config.Zabbix.Token)
 
-	item, err := zabbix.GetItemByName(itemName)
+	itemName := query.Name
+	index := query.Index
+	// 已索引名称命名主机
+	hostName := strings.ReplaceAll(index, "*", "")
+	host, err := zabbix.GetHostByName(hostName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "failure",
+			"error":  err.Error(),
+			"data":   map[string]interface{}{},
+		})
+		return
+	}
+	if host.HostID == "" {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "failure",
+			"error":  "索引同名主机不存在",
+			"data":   map[string]interface{}{},
+		})
+		return
+	}
+
+	item, err := zabbix.GetItemByName(itemName, host.HostID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"status": "failure",
@@ -239,32 +286,82 @@ func DeleteAlert(c *gin.Context) {
 	})
 }
 
-// GetAlert
-// @Summary Get Alerts
+type QueryAlertParamQuery struct {
+	Index string `form:"index" binding:"required"`
+}
+
+// QueryAlert
+// @Summary Query Alerts
 // @Schemes http
-// @Description 查看所有告警规则
+// @Description 查询单个索引相关告警
 // @Tags alert
 // @Accept json
 // @Produce json
+// @Param index query string true "索引"
 // @Success 200 {string} Success
 // @Security BasicAuth
-// @Router /alert/get [get]
-func GetAlert(c *gin.Context) {
+// @Router /alert/query [get]
+func QueryAlert(c *gin.Context) {
+
+	var query QueryAlertParamQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{
+			"status": "failure",
+			"error":  err.Error(),
+			"data":   map[string]interface{}{},
+		})
+		return
+	}
+
 	config := c.MustGet("config").(configs.Config)
 	zabbix := connector.NewZabbix(config.Zabbix.Url, config.Zabbix.Token)
-	items, _ := zabbix.GetItems()
+
+	index := query.Index
+	// 已索引名称命名主机
+	hostName := strings.ReplaceAll(index, "*", "")
+	host, err := zabbix.GetHostByName(hostName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "failure",
+			"error":  err.Error(),
+			"data":   map[string]interface{}{},
+		})
+		return
+	}
+	if host.HostID == "" {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "failure",
+			"error":  "索引同名主机不存在",
+			"data":   map[string]interface{}{},
+		})
+		return
+	}
+
+	items, err := zabbix.GetItemsByHost(host.HostID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"status": "failure",
+			"error":  err.Error(),
+			"data":   map[string]interface{}{},
+		})
+		return
+	}
 
 	var alerts []Alert
 	for i := range items {
 		trigger, _ := zabbix.GetTriggerByName(items[i].Name)
+		index := items[i].GetIndex()
+		hostName := strings.ReplaceAll(index, "*", "")
 		alert := Alert{
 			Name:          items[i].Name,
 			Key:           items[i].Key,
 			HostID:        items[i].HostID,
+			HostName:      hostName,
 			Elasticsearch: items[i].GetElasticsearch(),
-			Index:         items[i].GetIndex(),
+			Index:         index,
 			QueryString:   items[i].GetQueryString(),
 			Delay:         items[i].Delay,
+			Description:   items[i].Description,
 			Threshold:     trigger.GetThreshold(),
 		}
 		alerts = append(alerts, alert)
@@ -308,7 +405,7 @@ func main() {
 		ag := v1.Group("/alert")
 		{
 			ag.POST("/creat", CreatAlert)
-			ag.GET("/get", GetAlert)
+			ag.GET("/query", QueryAlert)
 			ag.DELETE("/delete", DeleteAlert)
 		}
 	}

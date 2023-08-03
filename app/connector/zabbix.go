@@ -27,13 +27,14 @@ func GeneratePosts(queryString, delay string) string {
 }
 
 type Item struct {
-	ItemID string `json:"itemid"`
-	HostID string `json:"hostid"`
-	Name   string `json:"name"`
-	Key    string `json:"key_"`
-	Delay  string `json:"delay"`
-	Url    string `json:"url"`
-	Posts  string `json:"posts"`
+	ItemID      string `json:"itemid"`
+	HostID      string `json:"hostid"`
+	Name        string `json:"name"`
+	Key         string `json:"key_"`
+	Delay       string `json:"delay"`
+	Url         string `json:"url"`
+	Posts       string `json:"posts"`
+	Description string `json:"description"`
 }
 
 func (i *Item) GetQueryString() string {
@@ -139,7 +140,7 @@ func (z *Zabbix) RequestApi(payload map[string]interface{}) ([]byte, error) {
 	return responseBody, nil
 }
 
-func (z *Zabbix) CreateItem(name, key, hostid, delay, username, password, url, posts string) (string, error) {
+func (z *Zabbix) CreateItem(name, key, hostid, delay, username, password, url, posts, description string) (string, error) {
 
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -174,6 +175,7 @@ func (z *Zabbix) CreateItem(name, key, hostid, delay, username, password, url, p
 			"tags": []map[string]string{
 				{"tag": "logs", "value": "alert"},
 			},
+			"description": description,
 		},
 		"id":   1,
 		"auth": z.token,
@@ -200,11 +202,12 @@ func (z *Zabbix) CreateItem(name, key, hostid, delay, username, password, url, p
 	return response.Result["itemids"][0], nil
 }
 
-func (z *Zabbix) GetItemByName(itemName string) (Item, error) {
+func (z *Zabbix) GetItemByName(itemName, hostid string) (Item, error) {
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"method":  "item.get",
 		"params": map[string]interface{}{
+			"hostids": hostid,
 			"filter": map[string]interface{}{
 				"name": []string{itemName},
 			},
@@ -277,6 +280,42 @@ func (z *Zabbix) GetItems() ([]Item, error) {
 
 }
 
+func (z *Zabbix) GetItemsByHost(hostid string) ([]Item, error) {
+	payload := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "item.get",
+		"params": map[string]interface{}{
+			"hostids": hostid,
+			"tags": []map[string]string{
+				{"tag": "logs", "operator": "4"},
+			},
+		},
+		"id":   1,
+		"auth": z.token,
+	}
+
+	responseBody, err := z.RequestApi(payload)
+	if err != nil {
+		return []Item{}, fmt.Errorf("请求ZabbixAPI失败：%s", err.Error())
+	}
+
+	var response struct {
+		Error  ResponseError `json:"error"`
+		Result []Item        `json:"result"`
+	}
+	err = json.Unmarshal(responseBody, &response)
+	if err != nil {
+		return []Item{}, fmt.Errorf("解析响应失败：%s", err.Error())
+	}
+
+	if response.Error.Message != "" {
+		return []Item{}, fmt.Errorf("获取监控项失败：%s", response.Error.Data)
+	}
+
+	return response.Result, nil
+
+}
+
 func (z *Zabbix) DeleteItemByID(itemId string) (string, error) {
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -311,6 +350,43 @@ func (z *Zabbix) DeleteItemByID(itemId string) (string, error) {
 	return "", fmt.Errorf("监控项不存在：%s", itemId)
 }
 
+func (z *Zabbix) CreateHost(hostName, groupid string) (string, error) {
+
+	payload := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "host.create",
+		"params": map[string]interface{}{
+			"host": hostName,
+			"groups": []map[string]string{
+				{"groupid": groupid},
+			},
+		},
+		"id":   1,
+		"auth": z.token,
+	}
+
+	responseBody, err := z.RequestApi(payload)
+	if err != nil {
+		return "", fmt.Errorf("请求ZabbixAPI失败：%s", err.Error())
+	}
+
+	var response struct {
+		Error  ResponseError       `json:"error"`
+		Result map[string][]string `json:"result"`
+	}
+	err = json.Unmarshal(responseBody, &response)
+	if err != nil {
+		return "", fmt.Errorf("解析响应失败：%s", err.Error())
+	}
+
+	if response.Error.Message != "" {
+		return "", fmt.Errorf("创建主机失败：%s", response.Error.Data)
+	}
+
+	return response.Result["hostids"][0], nil
+}
+
+// GetHostByName 查询不到返回空结构体
 func (z *Zabbix) GetHostByName(hostName string) (Host, error) {
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -346,7 +422,7 @@ func (z *Zabbix) GetHostByName(hostName string) (Host, error) {
 		return response.Result[0], nil
 	}
 
-	return Host{}, fmt.Errorf("主机不存在：%s", hostName)
+	return Host{}, nil
 }
 
 func (z *Zabbix) CreateTrigger(hostName, itemName, itemKey, threshold string) (string, error) {

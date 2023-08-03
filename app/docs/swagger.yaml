@@ -5,15 +5,15 @@ definitions:
       delay:
         example: 3m
         type: string
-      hostname:
-        example: Zabbix server
+      description:
+        example: description
         type: string
       threshold:
         example: '>=10'
         type: string
     required:
     - delay
-    - hostname
+    - description
     - threshold
     type: object
 info:
@@ -74,6 +74,11 @@ paths:
         name: name
         required: true
         type: string
+      - description: 索引
+        in: query
+        name: index
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -86,11 +91,17 @@ paths:
       summary: Delete Alert
       tags:
       - alert
-  /alert/get:
+  /alert/query:
     get:
       consumes:
       - application/json
-      description: 查看所有告警规则
+      description: 查询单个索引相关告警
+      parameters:
+      - description: 索引
+        in: query
+        name: index
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -100,14 +111,14 @@ paths:
             type: string
       security:
       - BasicAuth: []
-      summary: Get Alerts
+      summary: Query Alerts
       tags:
       - alert
   /monitor/health_check:
     get:
       consumes:
       - application/json
-      description: Health Check
+      description: 健康检查
       produces:
       - application/json
       responses:
